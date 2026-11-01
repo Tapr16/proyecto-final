@@ -35,10 +35,18 @@ spec:
           resources:
             requests: { cpu: 250m, memory: 512Mi }
             limits: { cpu: "1", memory: 512Mi }
+          # Sondas tolerantes a la saturación. Con los valores por defecto (timeoutSeconds: 1),
+          # bajo carga /health tardaba más de 1 s (espera a la BD), Kubernetes reiniciaba el pod
+          # en plena prueba (CrashLoopBackOff) y la comparación con Docker dejaba de ser justa.
+          # Con 200 usuarios cada respuesta tarda ~10-20 s (cola en la BD): /health necesita
+          # hasta 30 s y solo se saca el pod tras 2 minutos seguidos sin respuesta.
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
-            periodSeconds: 5
-          livenessProbe:
-            httpGet: { path: /health, port: 8000 }
-            periodSeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 30
+            failureThreshold: 8
+          livenessProbe:            # solo verifica que el proceso acepte conexiones
+            tcpSocket: { port: 8000 }
+            periodSeconds: 20
+            timeoutSeconds: 5
             failureThreshold: 6

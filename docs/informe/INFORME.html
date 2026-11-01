@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Proyecto Final — Comportamiento de una aplicación bajo diferentes escenarios de despliegue</title>
+<style>
+  @page { size: Letter; margin: 2cm 2cm; }
+  body { font-family: Calibri, 'Segoe UI', sans-serif; font-size: 11pt; line-height: 1.42; color: #1f2328; }
+  h1 { font-size: 20pt; color: #3b1a78; margin: 0 0 .3em; }
+  h2 { font-size: 15pt; color: #3b1a78; border-bottom: 2px solid #3b1a78; padding-bottom: 3px; margin-top: 1.5em; break-after: avoid; }
+  h3 { font-size: 12.5pt; color: #5b2bb5; margin-top: 1.1em; break-after: avoid; }
+  p, li { text-align: justify; }
+  a { color: #5b2bb5; }
+  code { font-family: Consolas, monospace; font-size: 9.5pt; background: #f2f4f7; padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Consolas, monospace; font-size: 8.8pt; overflow-wrap: anywhere; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: .6em 0 1em; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #c9d1d9; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #ede7fb; }
+  td.n { text-align: right; white-space: nowrap; }
+  figure { margin: .9em 0 1.2em; text-align: center; break-inside: avoid; }
+  figure img { max-width: 100%; max-height: 11cm; border: 1px solid #c9d1d9; }
+  figure.ancha img { max-height: 7.5cm; }
+  figcaption { font-size: 9.5pt; color: #57606a; margin-top: 4px; font-style: italic; }
+  .portada { height: 23cm; display: flex; flex-direction: column; justify-content: center; text-align: center; break-after: page; }
+  .portada h1 { font-size: 25pt; }
+  .portada .sub { font-size: 14pt; color: #5b2bb5; margin-bottom: 2.2em; }
+  .portada table { width: 72%; margin: 0 auto 2em; font-size: 11.5pt; }
+  .portada .enlaces { font-size: 11pt; line-height: 1.8; margin-bottom: 1.8em; }
+  .nota { background: #fff8e5; border-left: 4px solid #d4a72c; padding: 6px 10px; margin: .8em 0; break-inside: avoid; }
+  .clave { background: #f3eefe; border-left: 4px solid #6d28d9; padding: 6px 10px; margin: .8em 0; break-inside: avoid; }
+  .salto { break-before: page; }
+  p:has(+ pre) { break-after: avoid; }   /* el texto que presenta un bloque de código no queda solo al final de página */
+  .bueno { color: #15803d; font-weight: bold; } .malo { color: #b91c1c; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<section class="portada">
+  <h1>Comportamiento de una aplicación bajo diferentes escenarios de despliegue</h1>
+  <div class="sub">Docker Compose vs. Kubernetes (K3s) con 1, 2 y 3 nodos · Proyecto Final</div>
+  <table>
+    <tr><th>Código</th><th>Integrante</th></tr>
+    <tr><td>2221909</td><td>David Esteban Suarez Lozano</td></tr>
+    <tr><td>2221906</td><td>Thomas Alejandro Perez Rojas</td></tr>
+    <tr><td>2221922</td><td>Jesus David Santodomingo Carrascal</td></tr>
+  </table>
+  <div class="enlaces">
+    <b>Repositorio:</b> <a href="https://github.com/Tapr16/Proyecto-Final-Principios">https://github.com/Tapr16/Proyecto-Final-Principios</a><br>
+    <b>Notebook (Colab):</b> <a href="https://colab.research.google.com/github/Tapr16/Proyecto-Final-Principios/blob/main/notebook/analisis.ipynb">colab.research.google.com/github/Tapr16/Proyecto-Final-Principios/blob/main/notebook/analisis.ipynb</a><br>
+    <b>Video:</b> <a href="https://github.com/Tapr16/Proyecto-Final-Principios/blob/main/docs/video/Video-Proyecto-Final.mp4">docs/video/Video-Proyecto-Final.mp4</a> ·
+    <b>Diapositivas:</b> <a href="https://github.com/Tapr16/Proyecto-Final-Principios/blob/main/docs/presentacion/Presentacion-Proyecto-Final.pdf">docs/presentacion/</a>
+  </div>
+  <div>Principios y Prácticas de Desarrollo de Software Orientado a Objetos<br>Prof. Gabriel Rodrigo Pedraza Ferreira · Noviembre de 2026</div>
+</section>
+
+<h2>1. Introducción y objetivo</h2>
+<p>Este proyecto mide cómo cambia el comportamiento de una misma aplicación cuando se despliega de distintas formas. Se construyó una API REST de una tienda online (FastAPI + PostgreSQL) y se desplegó de <b>10 maneras</b>: con <b>Docker Compose</b> en una sola máquina (línea base) y con <b>Kubernetes (K3s)</b> en <b>1, 2 y 3 nodos</b> con <b>1, 2 y 3 réplicas</b> de la API. Cada escenario se sometió a la misma carga con JMeter (10, 50, 100 y 200 usuarios concurrentes, 3 repeticiones por nivel): <b>120 corridas</b> y unas 412.000 peticiones en total.</p>
+<p>Los objetivos fueron: (1) medir el costo de la orquestación con Kubernetes frente a Docker sobre el mismo hardware; (2) evaluar el escalado horizontal al agregar réplicas y nodos; y (3) identificar los cuellos de botella usando, además de JMeter, las métricas internas de Prometheus.</p>
+
+<h2>2. La aplicación</h2>
+<p>API REST en <b>FastAPI</b> (Python 3.12, un worker de Uvicorn por contenedor) con <b>PostgreSQL 16</b>, accedida con SQLAlchemy asíncrono y asyncpg (pool de 10 + 5 conexiones por réplica). Los datos se generan con Faker y semilla fija (<code>app/seed.py</code>), así que son idénticos en todos los escenarios; la base de datos se resetea antes de cada escenario porque los <code>POST</code> hacen crecer la tabla de pedidos.</p>
+<table>
+  <tr><th>Tabla</th><th class="n">Registros</th><th>Índices</th><th>Endpoint</th><th>Tipo de carga</th><th class="n">Peso</th></tr>
+  <tr><td>productos</td><td class="n">100.000</td><td>PK, categoria</td><td><code>GET /productos/{id}</code></td><td>Lectura por clave primaria</td><td class="n">50 %</td></tr>
+  <tr><td>clientes</td><td class="n">20.000</td><td>PK</td><td><code>GET /productos?categoria=X</code></td><td>Lectura paginada con filtro</td><td class="n">25 %</td></tr>
+  <tr><td>pedidos</td><td class="n">200.000</td><td>PK, cliente_id</td><td><code>GET /productos/buscar?q=</code></td><td><code>ILIKE</code> + conteo (recorre la tabla)</td><td class="n">10 %</td></tr>
+  <tr><td>items_pedido</td><td class="n">599.346</td><td>PK, pedido_id, producto_id</td><td><code>POST /pedidos</code></td><td>Escritura transaccional</td><td class="n">10 %</td></tr>
+  <tr><td colspan="3"></td><td><code>GET /reportes/ventas-por-categoria</code></td><td><code>JOIN</code> + <code>GROUP BY</code> sobre 600 mil items</td><td class="n">5 %</td></tr>
+</table>
+<p>Además expone <code>/health</code> (consulta <code>SELECT 1</code>) y <code>/metrics</code> para Prometheus (<code>prometheus-fastapi-instrumentator</code>). La búsqueda y el reporte se diseñaron costosos a propósito: el primero no tiene índice para <code>ILIKE</code> y el segundo agrega toda la tabla de items.</p>
+
+<h2>3. Infraestructura y arquitectura</h2>
+<p>Se usaron <b>4 VMs en Google Cloud</b> <code>n2d-standard-2</code> (2 vCPU AMD EPYC, 8 GB, <b>no burstable</b>, equivalentes al <code>Standard_D2as_v5</code> de la guía), Ubuntu 24.04, región <code>us-central1</code>, en la misma red privada <code>10.0.1.0/24</code>. JMeter corre en su propia VM para que el generador de carga no compita con la aplicación y la latencia de red sea baja y estable.</p>
+<figure class="ancha"><img src="../presentacion/diagramas/infraestructura.png" alt="Infraestructura"><figcaption>Figura 1. Infraestructura: nodo1 hizo la Fase 1 (Docker) y luego fue el servidor de K3s; nodo2 y nodo3 se unieron en las fases de 2 y 3 nodos.</figcaption></figure>
+<figure class="ancha"><img src="../presentacion/diagramas/camino-peticion.png" alt="Camino de una petición"><figcaption>Figura 2. Camino de una petición en Kubernetes: todas las réplicas de la API comparten una única instancia de PostgreSQL fijada en nodo1.</figcaption></figure>
+<div class="nota">Se intentó primero con <b>Azure for Students</b>, pero la cuota de la cuenta (6 vCPUs en total y 0 para la familia DASv5) no alcanzaba para 4 VMs y Azure rechazó el aumento. Por eso se usó la prueba gratuita de Google Cloud, con una alerta de presupuesto y una función que desactiva la facturación si hubiera cobros reales.</div>
+
+<h2>4. Configuración de despliegue</h2>
+<table>
+  <tr><th>Recurso</th><th>Docker Compose (Fase 1)</th><th>Kubernetes (Fases 2-4)</th></tr>
+  <tr><td>API</td><td><code>cpus: 1.0</code>, <code>mem_limit: 512m</code></td><td><code>limits</code>: 1 CPU, 512Mi · <code>requests</code>: 250m</td></tr>
+  <tr><td>PostgreSQL</td><td><code>cpus: 1.0</code>, <code>mem_limit: 2g</code></td><td>StatefulSet, <code>limits</code>: 1 CPU, 2Gi, fijo en nodo1 (<code>nodeSelector rol=db</code>)</td></tr>
+  <tr><td>Entrada</td><td>puerto 8000 de nodo1</td><td>Service NodePort 30080 en nodo1 (kube-proxy reparte)</td></tr>
+  <tr><td>Reparto</td><td>—</td><td><code>topologySpreadConstraints</code> (maxSkew 1, ScheduleAnyway)</td></tr>
+  <tr><td>Sondas</td><td><code>healthcheck</code> de PostgreSQL</td><td>readiness HTTP <code>/health</code> (timeout 30 s, 8 fallos) · liveness TCP</td></tr>
+  <tr><td>Datos</td><td><code>docker compose run api python seed.py</code></td><td>Job <code>seed</code> antes de cada escenario</td></tr>
+</table>
+<p>Los <b>límites</b> son idénticos en Docker y en Kubernetes para que la comparación sea justa; los <code>requests</code> de CPU son menores para que 3 réplicas quepan en un nodo de 2 vCPU junto a PostgreSQL y el monitoreo. La imagen de la API se publica en GitHub Container Registry (<code>ghcr.io/tapr16/pf-api:1.0</code>) con un GitHub Action y es la misma en todas las fases.</p>
+<h3>Monitorización</h3>
+<p>En la Fase 1: Prometheus, Grafana, cAdvisor y node-exporter (<code>docker-compose.monitoring.yml</code>). En Kubernetes: <code>kube-prometheus-stack</code> con Helm (Prometheus y Grafana fijos en nodo1, node-exporter en cada nodo y un <code>ServiceMonitor</code> para la API). Grafana se expuso solo por túnel SSH y en modo lectura. Las métricas de cada corrida se exportaron a CSV con <code>scripts/exportar_prometheus.py</code>.</p>
+
+<h2>5. Metodología de pruebas</h2>
+<ul>
+  <li><b>JMeter 5.6.3</b> en modo CLI desde <code>vm-jmeter</code> (<code>jmeter/plan.jmx</code>): mezcla 50/25/10/10/5 % con Throughput Controllers, datos válidos de <code>jmeter/ids.csv</code> y aserción de código 200/201.</li>
+  <li><b>Cargas:</b> 10, 50, 100 y 200 usuarios · <b>3 repeticiones</b> de 180 s (30 s de ramp-up) · calentamiento de 60 s descartado · 30 s de pausa entre corridas · al analizar se descartan los primeros 30 s de cada corrida.</li>
+  <li><b>Reglas de rigor:</b> base de datos reseteada antes de cada escenario, pods <code>Ready</code> antes de medir, y CPU de la VM de JMeter registrada en cada corrida (<code>vmstat</code>): nunca pasó del <b>4,8 %</b>, así que el generador nunca limitó la medición.</li>
+  <li><b>Automatización:</b> <code>jmeter/orquestar_fase.sh</code> corre una fase completa: por cada número de réplicas resetea la BD, escala la API, guarda la captura de <code>kubectl get pods -o wide</code> y ejecuta <code>jmeter/run_scenario.sh</code>.</li>
+</ul>
+
+<h2 class="salto">6. Resultados</h2>
+<table>
+  <tr><th>Escenario</th><th class="n">10 us.</th><th class="n">50 us.</th><th class="n">100 us.</th><th class="n">200 us.</th><th class="n">Errores (100-200)</th><th class="n">vs. Docker</th><th>Réplicas por nodo</th></tr>
+  <tr><td>Docker</td><td class="n">14,4</td><td class="n">14,7</td><td class="n">14,7</td><td class="n">14,8</td><td class="n">0,5 %</td><td class="n">—</td><td>—</td></tr>
+  <tr><td>k8s-1n-1r</td><td class="n">13,9</td><td class="n">14,4</td><td class="n">14,5</td><td class="n">14,5</td><td class="n">0,7 %</td><td class="n">−1 %</td><td>nodo1: 1</td></tr>
+  <tr><td>k8s-1n-2r</td><td class="n">13,4</td><td class="n">20,0</td><td class="n">19,6</td><td class="n">19,7</td><td class="n">6,4 %</td><td class="n">+35 %</td><td>nodo1: 2</td></tr>
+  <tr><td>k8s-1n-3r</td><td class="n">14,5</td><td class="n">22,4</td><td class="n">22,4</td><td class="n">22,7</td><td class="n">8,0 %</td><td class="n">+54 %</td><td>nodo1: 3</td></tr>
+  <tr><td>k8s-2n-1r</td><td class="n">14,3</td><td class="n">14,1</td><td class="n">14,3</td><td class="n">14,5</td><td class="n">0,8 %</td><td class="n">−2 %</td><td>nodo1: 1</td></tr>
+  <tr><td>k8s-2n-2r</td><td class="n">14,2</td><td class="n">19,9</td><td class="n">20,1</td><td class="n">19,9</td><td class="n">6,3 %</td><td class="n">+36 %</td><td>1 + 1</td></tr>
+  <tr><td>k8s-2n-3r</td><td class="n">14,1</td><td class="n">21,8</td><td class="n">22,9</td><td class="n">22,6</td><td class="n">8,1 %</td><td class="n">+55 %</td><td>1 + 2</td></tr>
+  <tr><td>k8s-3n-1r</td><td class="n">14,9</td><td class="n">15,2</td><td class="n">15,0</td><td class="n">15,3</td><td class="n">0,3 %</td><td class="n">+3 %</td><td>nodo2: 1</td></tr>
+  <tr><td>k8s-3n-2r</td><td class="n">14,7</td><td class="n">20,4</td><td class="n">20,3</td><td class="n">20,6</td><td class="n">6,3 %</td><td class="n">+40 %</td><td>nodo2 + nodo3</td></tr>
+  <tr><td>k8s-3n-3r</td><td class="n">14,9</td><td class="n">22,6</td><td class="n">23,0</td><td class="n">23,6</td><td class="n">7,9 %</td><td class="n">+60 %</td><td>1 + 1 + 1</td></tr>
+</table>
+<p style="font-size:9.5pt;color:#57606a;margin-top:-.6em"><i>Tabla 1. Throughput medio (req/s exitosas) de las 3 repeticiones por carga; "vs. Docker" compara el máximo de cada escenario. Detalle con desviación estándar, tiempos y p95 en el notebook.</i></p>
+<figure><img src="figuras/g1-throughput.png" alt="Gráfica 1"><figcaption>Figura 3. Throughput vs. usuarios para 1, 2 y 3 nodos (barras de error: desviación estándar de 3 repeticiones).</figcaption></figure>
+<figure><img src="figuras/g2-tiempo.png" alt="Gráfica 2"><figcaption>Figura 4. Tiempo medio de respuesta vs. usuarios: crece casi en proporción a la carga desde los 10 usuarios.</figcaption></figure>
+<table style="border:none"><tr>
+  <td style="border:none;width:50%"><figure><img src="figuras/g4-speedup.png" alt="Speedup"><figcaption>Figura 5. Speedup al aumentar réplicas frente al ideal lineal.</figcaption></figure></td>
+  <td style="border:none;width:50%"><figure><img src="figuras/g3-heatmap.png" alt="Heatmap"><figcaption>Figura 6. Throughput con 200 usuarios por nodos × réplicas.</figcaption></figure></td>
+</tr></table>
+<figure><img src="figuras/g8-prometheus.png" alt="Métricas internas"><figcaption>Figura 7. Métricas internas con 200 usuarios: CPU de la API vs. PostgreSQL, CPU por nodo y throttling.</figcaption></figure>
+<figure><img src="figuras/g7-errores.png" alt="Errores" style="max-height:8cm"><figcaption>Figura 8. Tasa de error por escenario y carga.</figcaption></figure>
+
+<h2 class="salto">7. Análisis</h2>
+<p><b>¿El throughput crece al aumentar réplicas?</b> Sí, pero lejos de lo lineal: con 200 usuarios pasa de ~14,5 req/s (1 réplica) a ~20 (2 réplicas, speedup ≈ 1,36) y ~23 (3 réplicas, ≈ 1,55), frente al ideal de 2 y 3 (Figura 5). La API no es lo que limita: todas sus réplicas juntas usan menos de 0,11 núcleos. Lo que cambia con más réplicas es que hay más conexiones simultáneas a PostgreSQL (15, 30 y 45).</p>
+<div class="clave"><b>Advertencia importante:</b> con 2 y 3 réplicas <b>falla el 68-85 % de los reportes</b> (sección 8.2). Cada reporte abortado es una agregación pesada que la base de datos no termina, y ese tiempo queda libre para las lecturas ligeras. Parte de la mejora de throughput es, por tanto, a costa de un endpoint degradado.</div>
+<p><b>¿En qué carga se satura cada configuración?</b> Con 1 réplica (y en Docker) el sistema ya está saturado con 10 usuarios: el throughput no pasa de ~15 req/s y el tiempo medio crece de 0,7 s a 3,4, 6,9 y 13,8 s. Con 2 y 3 réplicas la meseta llega con 50 usuarios (Figuras 3 y 4).</p>
+<p><b>¿3 réplicas en 1 nodo rinden igual que en 3 nodos?</b> Casi: 22,7 vs. 23,6 req/s (+4 %). La competencia por CPU dentro del nodo no aplica porque las réplicas casi no usan CPU. Lo que sí se nota un poco es separar la API del nodo de la base de datos: con 1 réplica, en las fases de 1 y 2 nodos el scheduler la dejó en nodo1 junto a PostgreSQL (14,5 req/s) y en la de 3 nodos en nodo2 (15,3 req/s, +5 %).</p>
+<p><b>¿La base de datos es el cuello de botella?</b> Sí, claramente (Figura 7): PostgreSQL usa ~0,9 de su límite de 1 núcleo en todos los escenarios y sufre <i>throttling</i> constante (~9 periodos limitados por segundo), mientras la API usa menos de 0,11. La búsqueda <code>ILIKE</code> y el reporte tardan 4-5 s incluso con 10 usuarios.</p>
+<p><b>¿Cuánto overhead añade Kubernetes frente a Docker?</b> Muy poco: con 1 réplica, entre −3,5 % (10 usuarios) y −1,5 % (200 usuarios) de throughput, con tiempos de respuesta equivalentes.</p>
+<p><b>¿Agregar nodos ayuda si la base de datos sigue siendo una sola instancia?</b> No de forma significativa: con las mismas réplicas, pasar de 1 a 3 nodos cambia el throughput en ≤ 5 %. En la fase de 3 nodos, nodo1 trabaja al ~56 % de CPU y nodo2 y nodo3 al 3-4 %: la capacidad nueva queda ociosa.</p>
+<p><b>¿Qué endpoint se degrada más?</b> En términos relativos, las lecturas simples: pasan de ~20 ms con 10 usuarios a ~12,7 s con 200 en Docker (×600), porque esperan detrás de las consultas pesadas en el pool de conexiones. En términos absolutos, la búsqueda y el reporte son los más lentos (~19-20 s con 200 usuarios).</p>
+<p><b>Limitante del punto de entrada:</b> todo el tráfico entra por el NodePort de nodo1. No llegó a ser el límite, pero lo sería en un sistema sin el cuello de botella de la base de datos.</p>
+
+<h2>8. Hallazgos y problemas encontrados</h2>
+<h3>8.1 Las sondas por defecto de Kubernetes tumbaban el servicio</h3>
+<p>La primera medición de <code>k8s-1n-1r</code> usó sondas con <code>timeoutSeconds: 1</code> (valor por defecto). Bajo carga, <code>/health</code> tardaba más de 1 s porque espera a la base de datos: la <i>liveness probe</i> fallaba y Kubernetes <b>reiniciaba el pod en plena prueba</b> (<code>CrashLoopBackOff</code>, 9 reinicios). Con la readiness a 10 s el pod ya no se reiniciaba, pero con 200 usuarios salía del Service. Se dejó readiness con 30 s de timeout y 8 fallos, y liveness por TCP. Las corridas afectadas se descartaron y se guardan en <code>results_descartados/</code> como evidencia.</p>
+<table>
+  <tr><th>Configuración</th><th class="n">50 usuarios</th><th class="n">100 usuarios</th><th class="n">200 usuarios</th></tr>
+  <tr><td>Sondas por defecto (1 s)</td><td class="n malo">19,2 %</td><td class="n malo">87,2 %</td><td class="n malo">68,9 %</td></tr>
+  <tr><td>Readiness 10 s</td><td class="n">0,5 %</td><td class="n">0,6 %</td><td class="n malo">6,0 %</td></tr>
+  <tr><td>Sondas finales (usadas en el análisis)</td><td class="n bueno">0,5 %</td><td class="n bueno">0,4 %</td><td class="n bueno">0,9 %</td></tr>
+</table>
+<h3>8.2 Con más réplicas PostgreSQL se queda sin memoria compartida</h3>
+<p>Con 2 y 3 réplicas aparece un 6-8 % de errores. Casi la mitad son <code>500</code> del reporte, con este error en el log de PostgreSQL: <code>could not resize shared memory segment … No space left on device</code>. El reporte usa <i>parallel workers</i>, que reservan memoria en <code>/dev/shm</code> (64 MB por defecto, igual en Docker y en Kubernetes). Con 1 réplica hay como máximo 15 conexiones y pocos reportes simultáneos; con 3 hay hasta 45 y la memoria se agota. Se decidió <b>no corregirlo a mitad del experimento</b> (la configuración es la misma en todas las fases) y reportarlo: escalar la API traslada la presión a la base de datos. El resto de errores son <code>SocketException</code> en lecturas simples; la causa más probable es el cierre de conexiones <i>keep-alive</i> inactivas por Uvicorn (no confirmado).</p>
+<h3>8.3 Otros problemas técnicos</h3>
+<table>
+  <tr><th>Problema</th><th>Solución</th></tr>
+  <tr><td>Cuota de Azure for Students insuficiente (6 vCPU, DASv5 = 0); aumento rechazado</td><td>Migración a Google Cloud con presupuesto y apagado automático de facturación</td></tr>
+  <tr><td>cAdvisor no veía los contenedores con Docker 29 (almacén de imágenes de containerd)</td><td><code>/etc/docker/daemon.json</code> con <code>containerd-snapshotter: false</code> (overlay2); se repitió la Fase 1</td></tr>
+  <tr><td>Sin capacidad de <code>n2d-standard-2</code> en la zona <code>us-central1-a</code></td><td>Script de creación reintentable, VMs en <code>us-central1-c</code></td></tr>
+  <tr><td>IPs públicas que cambian al encender las VMs</td><td>JMeter ataca la IP privada fija; llaves SSH asociadas al nombre de cada VM</td></tr>
+</table>
+
+<h2>9. Conclusiones</h2>
+<ol>
+  <li><b>El cuello de botella es la base de datos</b>, no la aplicación: con una sola instancia de PostgreSQL limitada a 1 CPU, el throughput se estanca en ~15 req/s con 1 réplica, y ni Docker ni Kubernetes lo cambian.</li>
+  <li><b>Kubernetes casi no añade costo</b> sobre el mismo hardware (−1,5 % a −3,5 %), a cambio de escalado, autorreparación y reparto de carga.</li>
+  <li><b>Escalar una capa sin estado ayuda poco si el estado está centralizado</b>: 3 réplicas dan 1,55× y no 3×, y parte de la mejora se debe a que el reporte pesado empieza a fallar.</li>
+  <li><b>Agregar nodos no mejora el rendimiento</b> cuando lo que limita no se replica: con 3 nodos, dos quedaron por debajo del 5 % de CPU.</li>
+  <li><b>Los valores por defecto de Kubernetes pueden empeorar un sistema saturado</b>: las sondas de 1 s llevaban los errores de &lt; 1 % a 69-87 %.</li>
+  <li><b>Las métricas internas fueron imprescindibles</b>: JMeter mostraba que el sistema no escalaba; Prometheus mostró por qué.</li>
+</ol>
+
+<h2>10. Recomendaciones</h2>
+<ul>
+  <li><b>Optimizar la base de datos:</b> índice trigram (<code>pg_trgm</code>) para la búsqueda y vista materializada o caché (Redis) para el reporte.</li>
+  <li><b>Escalar la base de datos:</b> más CPU o réplicas de lectura, y PgBouncer para controlar las conexiones que llegan al escalar la API.</li>
+  <li><b>Más memoria compartida para PostgreSQL:</b> <code>emptyDir</code> con <code>medium: Memory</code> en <code>/dev/shm</code> (Kubernetes) o <code>shm_size</code> (Compose), o limitar <code>max_parallel_workers_per_gather</code>.</li>
+  <li><b>Sondas tolerantes a la saturación:</b> liveness simple (TCP) y readiness con timeouts acordes a la latencia real.</li>
+  <li><b>Horizontal Pod Autoscaler solo cuando la API sea el límite</b>, e <b>Ingress o balanceador externo</b> en lugar del NodePort de un solo nodo.</li>
+</ul>
+
+<h2 class="salto">11. Instrucciones de ejecución</h2>
+<h3>11.1 Requisitos</h3>
+<table>
+  <tr><th>Herramienta</th><th>Versión usada</th><th>Dónde</th></tr>
+  <tr><td>Google Cloud CLI (<code>gcloud</code>)</td><td>590</td><td>PC (crear y apagar las VMs)</td></tr>
+  <tr><td>Docker + Docker Compose</td><td>29.9</td><td>nodo1 (Fase 1) y PC (pruebas locales)</td></tr>
+  <tr><td>K3s (incluye <code>kubectl</code>) y Helm</td><td>v1.36.5+k3s1 · Helm 3.22</td><td>nodo1, nodo2, nodo3</td></tr>
+  <tr><td>JMeter + Java</td><td>5.6.3 · OpenJDK 17</td><td>vm-jmeter</td></tr>
+  <tr><td>Python + pandas, matplotlib, seaborn</td><td>3.12</td><td>PC o Colab (notebook y exportación de métricas)</td></tr>
+</table>
+<h3>11.2 Pasos</h3>
+<p><b>1. Crear la infraestructura</b> (desde el repositorio, con <code>gcloud auth login</code> hecho):</p>
+<pre>gcloud config set project &lt;PROYECTO&gt;
+./infra/gcp-create.sh cuotas     # verificar cuota de CPU, IPs y disco SSD
+./infra/gcp-create.sh crear      # red vpc-pf, firewall y 4 VMs n2d-standard-2
+./infra/gcp-create.sh ips        # IPs privadas fijas (10.0.1.10-12, .20) y públicas</pre>
+<p>En cada VM: <code>./preparar-vm.sh docker</code> (nodo1), <code>./preparar-vm.sh nodo</code> (nodo2, nodo3) o <code>./preparar-vm.sh jmeter</code> (vm-jmeter), y en nodo1 y vm-jmeter: <code>git clone https://github.com/Tapr16/Proyecto-Final-Principios.git proyecto-final</code>.</p>
+<p><b>2. Fase 1 — Docker Compose</b> (en nodo1, con <code>.env</code> creado a partir de <code>.env.example</code>):</p>
+<pre>docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+docker compose run --rm api python seed.py        # 100K productos, ~600K items
+# en vm-jmeter:
+cd proyecto-final/jmeter && ./run_scenario.sh docker 10.0.1.10 8000</pre>
+<p>Antes de pasar a Kubernetes se exportan las métricas (<code>python scripts/exportar_prometheus.py --docker</code>, con túnel SSH al puerto 9090) y se apaga Docker: <code>docker compose ... down</code> y <code>sudo systemctl disable --now docker docker.socket</code>.</p>
+<p><b>3. K3s y unión de nodos:</b></p>
+<pre># nodo1 (servidor)
+curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644 \
+  --node-ip 10.0.1.10 --node-name nodo1 --disable traefik
+kubectl label node nodo1 rol=db
+# nodo2 / nodo3 (cuando llega su fase), con el token de /var/lib/rancher/k3s/server/node-token
+curl -sfL https://get.k3s.io | K3S_URL=https://10.0.1.10:6443 K3S_TOKEN=&lt;token&gt; \
+  sh -s - --node-ip 10.0.1.11 --node-name nodo2
+kubectl -n proyecto rollout restart deployment/api    # redistribuir las réplicas</pre>
+<p><b>4. Despliegue con <code>kubectl apply</code></b> (en nodo1; el secreto con la clave real se crea en la VM, no en el repositorio):</p>
+<pre>kubectl apply -f k8s/00-namespace.yaml
+kubectl -n proyecto create secret generic postgres-secret --from-literal=POSTGRES_DB=tienda \
+  --from-literal=POSTGRES_USER=app --from-literal=POSTGRES_PASSWORD=&lt;clave&gt; \
+  --from-literal=DATABASE_URL=postgresql+asyncpg://app:&lt;clave&gt;@postgres:5432/tienda
+kubectl apply -f k8s/02-postgres-statefulset.yaml -f k8s/03-postgres-service.yaml \
+  -f k8s/04-api-deployment.yaml -f k8s/05-api-service.yaml -f k8s/06-seed-job.yaml</pre>
+<p><b>5. Monitorización</b> (una vez, antes de la primera fase de Kubernetes):</p>
+<pre>helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring \
+  --create-namespace -f k8s/monitoring/values.yaml --set grafana.adminPassword=&lt;clave&gt;
+kubectl apply -f k8s/monitoring/api-servicemonitor.yaml</pre>
+<p><b>6. Pruebas</b> (en vm-jmeter, con SSH sin clave hacia nodo1 por la red privada). Cada fase corre sus 3 escenarios con reseteo de BD, escalado y captura de pods:</p>
+<pre>cd proyecto-final/jmeter
+./orquestar_fase.sh 1     # k8s-1n-1r, k8s-1n-2r, k8s-1n-3r (~2 h 20 min)
+./orquestar_fase.sh 2     # tras unir nodo2
+./orquestar_fase.sh 3     # tras unir nodo3</pre>
+<p>Al terminar cada fase: copiar <code>results/</code> al PC y exportar sus métricas con <code>python scripts/exportar_prometheus.py --escenarios ...</code>. Al final del proyecto, <code>./infra/gcp-create.sh borrar</code> o borrar el proyecto de Google Cloud.</p>
+<p><b>7. Abrir el notebook</b> (sección 12).</p>
+<div class="nota">El README del repositorio tiene la versión completa de estos pasos, la tabla de problemas comunes y los detalles de cada script.</div>
+
+<h2>12. Cómo visualizar el notebook</h2>
+<ul>
+  <li><b>Google Colab (recomendado):</b> abrir <a href="https://colab.research.google.com/github/Tapr16/Proyecto-Final-Principios/blob/main/notebook/analisis.ipynb">este enlace</a>. El notebook se guardó <b>con sus resultados</b>, así que se puede leer sin ejecutar nada; para recalcular todo, <i>Entorno de ejecución → Ejecutar todas</i>: la primera celda de código clona el repositorio con los 120 archivos de resultados.</li>
+  <li><b>GitHub:</b> <code>notebook/analisis.ipynb</code> se ve directamente en el navegador con tablas y gráficas.</li>
+  <li><b>Jupyter local:</b> <code>pip install pandas matplotlib seaborn jupyter</code> y <code>jupyter notebook notebook/analisis.ipynb</code> desde la raíz del repositorio.</li>
+</ul>
+<p>El notebook contiene: descripción de la aplicación e infraestructura, reparto de réplicas por nodo, metodología, carga de las 120 corridas, tabla resumen con desviación estándar, las 8 gráficas pedidas (throughput, tiempo de respuesta, heatmap, speedup, Docker vs. K8s, réplicas por nodos, errores y métricas de Prometheus), análisis por endpoint, hallazgos, conclusiones y recomendaciones.</p>
+
+<h2>13. Referencias</h2>
+<ul style="font-size:10pt">
+  <li>Kubernetes — Configure Liveness, Readiness and Startup Probes: kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/</li>
+  <li>K3s — Quick-Start Guide: docs.k3s.io/quick-start</li>
+  <li>kube-prometheus-stack (Helm chart): github.com/prometheus-community/helm-charts</li>
+  <li>Apache JMeter 5.6.3 User Manual: jmeter.apache.org/usermanual/</li>
+  <li>PostgreSQL 16 — Parallel Query y <code>dynamic_shared_memory_type</code>: postgresql.org/docs/16/</li>
+  <li>FastAPI: fastapi.tiangolo.com · SQLAlchemy asyncio: docs.sqlalchemy.org</li>
+</ul>
+
+</body>
+</html>

@@ -28,9 +28,11 @@ spec:
           resources:
             requests: { cpu: 500m, memory: 2Gi }
             limits: { cpu: "1", memory: 2Gi }
-          readinessProbe:
+          readinessProbe:           # tolerante: bajo carga pg_isready tarda más de 1 s
             exec: { command: ["pg_isready", "-U", "app", "-d", "tienda"] }
-            periodSeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 6
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data }
   volumeClaimTemplates:

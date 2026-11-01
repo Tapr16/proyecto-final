@@ -25,8 +25,13 @@ prometheus:
       requests: { cpu: 100m, memory: 512Mi }
 
 grafana:
-  adminPassword: CAMBIAR-CLAVE
+  adminPassword: CAMBIAR-CLAVE   # o al instalar: --set grafana.adminPassword=$(openssl rand -hex 12)
   nodeSelector: { rol: db }
+  # Lectura sin clave (rol Viewer). Grafana no se expone a internet: solo por port-forward + túnel SSH
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
 
 prometheusOperator:
   nodeSelector: { rol: db }

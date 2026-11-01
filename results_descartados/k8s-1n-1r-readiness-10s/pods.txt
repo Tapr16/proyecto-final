@@ -1,0 +1,7 @@
+NAME    STATUS   ROLES           AGE   VERSION        INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION           CONTAINER-RUNTIME
+nodo1   Ready    control-plane   46m   v1.36.5+k3s1   10.0.1.10     <none>        Ubuntu 24.04.5 LTS   7.0.0-1014-gcp (amd64)   containerd://2.3.4-k3s1.36
+
+NAME                   READY   STATUS      RESTARTS   AGE     IP           NODE    NOMINATED NODE   READINESS GATES
+api-6f9f64db97-tmc25   1/1     Running     0          3m59s   10.42.0.18   nodo1   <none>           <none>
+postgres-0             1/1     Running     0          3m57s   10.42.0.19   nodo1   <none>           <none>
+seed-gs9l7             0/1     Completed   0          49s     10.42.0.20   nodo1   <none>           <none>

@@ -3,9 +3,23 @@
 API REST de una **tienda online** (FastAPI + PostgreSQL) desplegada con Docker Compose y con Kubernetes (K3s)
 en 1, 2 y 3 nodos de Google Cloud, probada con JMeter y monitoreada con Prometheus + Grafana.
 
-**Integrantes:** Thomas Perez, David Suarez, Jesus Santodomingo
+**Integrantes:** David Esteban Suarez Lozano (2221909) · Thomas Alejandro Perez Rojas (2221906) ·
+Jesus David Santodomingo Carrascal (2221922)
 
-**Repositorio:** https://github.com/Tapr16/Proyecto-Final-Principios · **Notebook:** [`notebook/analisis.ipynb`](notebook/analisis.ipynb)
+**Curso:** Principios y Prácticas de Desarrollo de Software Orientado a Objetos
+
+## Entregables
+
+| Entregable | Dónde |
+|---|---|
+| Informe (PDF) | [`docs/informe/Informe_Proyecto_Final.pdf`](docs/informe/Informe_Proyecto_Final.pdf) |
+| Notebook de análisis | [`notebook/analisis.ipynb`](notebook/analisis.ipynb) · [abrir en Colab](https://colab.research.google.com/github/Tapr16/Proyecto-Final-Principios/blob/main/notebook/analisis.ipynb) |
+| Video de la demostración (10 min) | [`docs/video/Video-Proyecto-Final.mp4`](docs/video/Video-Proyecto-Final.mp4) |
+| Diapositivas | [`docs/presentacion/Presentacion-Proyecto-Final.pdf`](docs/presentacion/Presentacion-Proyecto-Final.pdf) (y `.pptx`) |
+| Resultados | `results/`: 10 escenarios × 4 cargas × 3 repeticiones (120 corridas), `runs.csv` y métricas de Prometheus |
+
+**Resultado principal:** el cuello de botella es PostgreSQL (≈0,9 de 1 núcleo en todos los escenarios). Kubernetes
+cuesta 1,5-3,5 % frente a Docker; 3 réplicas dan 1,55× (no 3×) y agregar nodos casi no cambia nada (≤ 5 %).
 
 ## Estructura
 
@@ -14,17 +28,21 @@ app/                 API FastAPI, seed.py (datos), Dockerfile
 docker-compose.yml   Fase 1 (Docker)
 docker-compose.monitoring.yml + monitoring/   Prometheus, Grafana, cAdvisor, node-exporter (Fase 1)
 k8s/                 Manifiestos de Kubernetes (00..06) y monitoring/ (Helm values + ServiceMonitor)
-infra/               gcp-create.sh (Google Cloud), preparar-vm.sh y azure-create.sh (alternativa descartada)
-jmeter/              plan.jmx, ids.csv, run_scenario.sh
-scripts/             exportar_prometheus.py (métricas de cada corrida a CSV)
-results/             .jtl de cada escenario, runs.csv y results/prometheus/*.csv
-notebook/            analisis.ipynb (Colab)
-docs/                reporte.pdf y bitácora
+infra/               gcp-create.sh (Google Cloud), preparar-vm.sh, corte-facturacion/ (apagado automático de
+                     facturación) y azure-create.sh (alternativa descartada)
+jmeter/              plan.jmx, ids.csv, run_scenario.sh (un escenario) y orquestar_fase.sh (una fase de K8s)
+scripts/             exportar_prometheus.py, resumen_resultados.py, comparar_escenarios.py y demos del video
+tools/               grabar_video.py (OBS) y generar_notebook.py
+results/             .jtl de cada escenario, pods.txt (reparto de réplicas), runs.csv y prometheus/*.csv
+results_descartados/ corridas con las sondas por defecto (evidencia del hallazgo, fuera del análisis)
+notebook/            analisis.ipynb (se guarda con resultados; abre en Colab)
+docs/                informe/, presentacion/, video/, capturas/ y bitácora
+.github/workflows/   imagen.yml: publica ghcr.io/tapr16/pf-api:1.0
 ```
 
 ## Requisitos
 
-Docker, kubectl, K3s, Helm 3, JMeter 5.6.3, Python 3.12, Google Cloud CLI (`gcloud`).
+Docker 29, K3s v1.36 (incluye `kubectl`), Helm 3.22, JMeter 5.6.3 (Java 17), Python 3.12, Google Cloud CLI (`gcloud`).
 
 ---
 
@@ -166,13 +184,14 @@ sudo systemctl disable --now docker docker.socket
 
 ```bash
 curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644 \
-  --node-ip 10.0.1.10 --disable traefik
+  --node-ip 10.0.1.10 --node-name nodo1 --disable traefik
 echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc && source ~/.bashrc
 kubectl label node nodo1 rol=db
 sudo cat /var/lib/rancher/k3s/server/node-token     # guardar para nodo2 y nodo3
 ```
 
-(Traefik se desactiva porque no se usa: se entra por NodePort y así no consume recursos.)
+(Traefik se desactiva porque no se usa: se entra por NodePort y así no consume recursos. `--node-name` evita que el
+nodo tome el nombre largo de Google Cloud, `nodo1.us-central1-c.c.<proyecto>.internal`.)
 
 ### 4.2 Monitorización (Helm) — se instala una vez y se deja en todas las fases K8s
 
@@ -180,7 +199,8 @@ sudo cat /var/lib/rancher/k3s/server/node-token     # guardar para nodo2 y nodo3
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && helm repo update
 helm install monitoring prometheus-community/kube-prometheus-stack \
-  -n monitoring --create-namespace -f k8s/monitoring/values.yaml
+  -n monitoring --create-namespace -f k8s/monitoring/values.yaml \
+  --set grafana.adminPassword=$(openssl rand -hex 12)     # la clave se genera en la VM
 ```
 
 Acceso:
@@ -191,7 +211,7 @@ kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 909
 ./infra/gcp-create.sh ssh nodo1 -- -L 3000:localhost:3000 -L 9090:localhost:9090
 ```
 
-Grafana (admin / la clave de `values.yaml`) ya trae dashboards de Kubernetes: *Kubernetes / Compute Resources / Namespace (Pods)*
+Grafana abre en **modo lectura sin clave** (solo es accesible por el túnel) y ya trae dashboards de Kubernetes: *Kubernetes / Compute Resources / Namespace (Pods)*
 con namespace `proyecto` y *Node Exporter / Nodes*.
 
 Al terminar cada fase de K8s (1, 2 y 3 nodos), exportar sus métricas desde su PC con el túnel abierto:
@@ -199,9 +219,16 @@ Al terminar cada fase de K8s (1, 2 y 3 nodos), exportar sus métricas desde su P
 
 ### 4.3 Desplegar la aplicación
 
+El secreto con la clave real se crea en la VM (no se edita `01-postgres-secret.yaml`, que queda con `CAMBIAR-CLAVE`):
+
 ```bash
 kubectl apply -f k8s/00-namespace.yaml
-kubectl apply -f k8s/                      # también lanza el seed
+P=$(openssl rand -hex 16)
+kubectl -n proyecto create secret generic postgres-secret --from-literal=POSTGRES_DB=tienda \
+  --from-literal=POSTGRES_USER=app --from-literal=POSTGRES_PASSWORD=$P \
+  --from-literal=DATABASE_URL=postgresql+asyncpg://app:$P@postgres:5432/tienda; unset P
+for f in 02-postgres-statefulset 03-postgres-service 04-api-deployment 05-api-service 06-seed-job; do
+  kubectl apply -f k8s/$f.yaml; done          # 06 también lanza el seed
 kubectl apply -f k8s/monitoring/api-servicemonitor.yaml
 kubectl -n proyecto rollout status statefulset/postgres
 kubectl -n proyecto wait --for=condition=complete job/seed --timeout=15m
@@ -211,7 +238,16 @@ kubectl -n proyecto get pods -o wide
 
 ### 4.4 Ciclo por escenario (repetir para cada número de réplicas)
 
-En nodo1:
+**Automatizado (como se hizo):** `jmeter/orquestar_fase.sh` corre desde vm-jmeter los 3 escenarios de una fase
+(reset de BD, escalado, captura de pods en `results/<escenario>/pods.txt` y `run_scenario.sh`). Necesita SSH sin
+clave de vm-jmeter a `pf@10.0.1.10` por la red privada:
+
+```bash
+cd proyecto-final/jmeter
+setsid nohup env PATH="$PATH:$HOME/apache-jmeter-5.6.3/bin" ./orquestar_fase.sh 1 > ~/fase-1n.log 2>&1 < /dev/null &
+```
+
+**Manual**, en nodo1:
 ```bash
 # 1. Resetear la BD
 kubectl -n proyecto delete job seed --ignore-not-found
@@ -239,7 +275,7 @@ En vm-jmeter:
 En el nodo nuevo:
 ```bash
 curl -sfL https://get.k3s.io | K3S_URL=https://10.0.1.10:6443 \
-  K3S_TOKEN=<token> sh -s - --node-ip <IP_DEL_NODO>    # nodo2: 10.0.1.11, nodo3: 10.0.1.12
+  K3S_TOKEN=<token> sh -s - --node-ip <IP_DEL_NODO> --node-name <NOMBRE>   # nodo2: 10.0.1.11, nodo3: 10.0.1.12
 ```
 En nodo1:
 ```bash
@@ -272,9 +308,21 @@ gcloud projects delete pf-experimento-tapr16         # al final de todo: borra t
 
 ## 7. Ver el notebook
 
-- **Colab:** *Archivo → Abrir cuaderno → GitHub* y pegar la URL del repositorio; elegir `notebook/analisis.ipynb`.
-  Cambiar `REPO_URL` en la primera celda de código y ejecutar todo.
+- **Colab:** [abrir el notebook](https://colab.research.google.com/github/Tapr16/Proyecto-Final-Principios/blob/main/notebook/analisis.ipynb).
+  Está guardado **con sus resultados**: se puede leer sin ejecutar. Para recalcular, *Ejecutar todas*: la primera
+  celda de código clona el repositorio con los resultados.
+- **GitHub:** `notebook/analisis.ipynb` se ve directamente con tablas y gráficas.
 - **Local:** `pip install pandas matplotlib seaborn jupyter && jupyter notebook notebook/analisis.ipynb`
+- Para regenerarlo con otro texto: `python tools/generar_notebook.py notebook/analisis.ipynb` y volver a ejecutarlo.
+
+## 8. Video y diapositivas
+
+- **Video:** cada parte es una demo automática (`scripts/demo-video-fase1.sh` para Docker y
+  `scripts/demo-video-fase2.sh` para Kubernetes) grabada con OBS por WebSocket (`tools/grabar_video.py prueba|grabar A|B`),
+  que superpone las gráficas de Prometheus y Grafana. Las dos partes se unen con ffmpeg en `Video-Proyecto-Final.mp4`.
+- **Diapositivas:** `docs/presentacion/_build/` (`datos.py` calcula los gráficos desde `results/`, `diagramas.py` hace
+  los diagramas con Graphviz y `diapos.js` genera el `.pptx` con pptxgenjs; `pptpdf.ps1` lo exporta a PDF con PowerPoint).
+- **Informe:** `docs/informe/INFORME.html`, impreso a PDF con Edge (`msedge --headless --print-to-pdf`).
 
 ## Datos de prueba de JMeter (`jmeter/ids.csv`)
 
@@ -295,6 +343,8 @@ Como los datos son deterministas, los IDs siempre existen tras el seed. Para reg
 | Más réplicas y el throughput no sube | BD o JMeter saturados | CPU de PostgreSQL (Grafana) y `u*_vmstat.txt` de vm-jmeter |
 | Repeticiones muy distintas | BD sin resetear, VMs ocupadas | Revisar las reglas de la sección 5 |
 | cAdvisor no muestra `api` ni `db` (solo servicios del sistema) | Docker 29 usa el almacén de containerd, que cAdvisor no reconoce | `/etc/docker/daemon.json` con `{"features": {"containerd-snapshotter": false}}` y reiniciar Docker (ya lo hace `preparar-vm.sh docker`) |
+| Errores `ConnectTimeout` / `connection refused` desde 50 usuarios y pod en `CrashLoopBackOff` | Sondas con `timeoutSeconds: 1` (valor por defecto): bajo carga `/health` tarda más y Kubernetes reinicia el pod | Sondas tolerantes (ya aplicadas en `02` y `04`): readiness de la API con 30 s de timeout y 8 fallos (2 min), de PostgreSQL con 10 s, y liveness por TCP |
+| Con 2-3 réplicas, `500` en `/reportes/ventas-por-categoria` y log de PostgreSQL `could not resize shared memory segment … No space left on device` | Más réplicas = más conexiones a la BD (hasta 45) = más reportes con *parallel workers* a la vez, que agotan `/dev/shm` (64 MB por defecto, igual en Docker y K8s) | **Se deja como hallazgo** (misma configuración en todas las fases). Mejora posible: montar `/dev/shm` más grande (emptyDir `medium: Memory` en K8s, `shm_size` en Compose) |
 | `port is already allocated` en local | Puerto 8000 ocupado | `API_PORT=8088` en `.env` |
 | El crédito de Google Cloud baja rápido | VMs encendidas sin uso | `./infra/gcp-create.sh apagar` al terminar cada sesión |
 | `QUOTA_EXCEEDED` al crear VMs | Cuota de CPUs, IPs o disco SSD | `./infra/gcp-create.sh cuotas` |
@@ -311,6 +361,11 @@ Como los datos son deterministas, los IDs siempre existen tras el seed. Para reg
 - `limits` iguales en Docker y K8s (API 1 CPU / 512 MB, PostgreSQL 1 CPU / 2 GB). Los `requests` de CPU en K8s
   son menores (API 250m, PostgreSQL 500m) para que las 3 réplicas quepan en un nodo de 2 vCPU.
 - 1 worker de Uvicorn por contenedor; pool de 10 + 5 conexiones por réplica (máx. 45 con 3 réplicas).
+- Sondas de Kubernetes tolerantes a la saturación (readiness de la API con 30 s de timeout, liveness por TCP). Con los valores
+  por defecto (1 s) Kubernetes reiniciaba la API en plena prueba; esas corridas se descartaron y se guardan como
+  evidencia del hallazgo (no entran en el análisis).
+- `/dev/shm` de PostgreSQL con el tamaño por defecto (64 MB) en todas las fases. Con 2-3 réplicas de la API se agota
+  y el reporte falla con 500 (~6-8 % de errores): se reporta como hallazgo, no se corrige a mitad del experimento.
 - Datos deterministas (semilla 42). La búsqueda `ILIKE` no tiene índice a propósito (endpoint costoso).
 
 ## Anexo A — Azure (alternativa descartada)

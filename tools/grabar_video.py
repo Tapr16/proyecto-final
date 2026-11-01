@@ -46,6 +46,18 @@ PARTES = {
         ],
     },
 }
+PARTES["B"] = {
+    "demo": "scripts/demo-video-fase2.sh",
+    "salida": "Video-ParteB-Kubernetes.mp4",
+    "paginas": [
+        ("PF-Grafana-Pods", "http://localhost:3300/d/85a562078cdf77779eaa1add43ccec1e"
+                            "?var-namespace=proyecto&from=now-10m&to=now&refresh=5s&kiosk", False),
+        ("PF-Prom-Nodos", prometheus(
+            '100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])))',
+            'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="proyecto",container!=""}[1m]))',
+            rango="10m")),
+    ],
+}
 ESCENA, FUENTE = "PF-Demo", "PF-Pantalla"
 
 
@@ -79,10 +91,14 @@ def preparar(c, paginas):
     c.create_scene(ESCENA)
     c.create_input(ESCENA, FUENTE, "monitor_capture", {"monitor_id": monitor_id(c), "capture_cursor": False}, True)
     ajustar(c, FUENTE)
-    for nombre, url in paginas:  # ocultas; se recargan al mostrarlas para ver la carga actual
+    for nombre, url, *opc in paginas:  # ocultas; Prometheus se recarga al mostrarse, Grafana se precarga
+        recargar = opc[0] if opc else True
         c.create_input(ESCENA, nombre, "browser_source",
                        {"url": url, "width": 1920, "height": 1080, "shutdown": False,
-                        "restart_when_active": True}, False)
+                        "restart_when_active": recargar,
+                        # OBS inyecta por defecto un fondo transparente: se vería el escritorio detrás
+                        "css": "body { background-color: #111217 !important; margin: 0px auto; overflow: hidden; }"},
+                       False)
         estado["items"][nombre] = ajustar(c, nombre)
     c.set_current_program_scene(ESCENA)
     for nombre in estado["mute"]:
@@ -108,7 +124,7 @@ def restaurar(c, estado, paginas):
 
 
 def mostrar_paginas(c, estado, paginas):
-    for nombre, _ in paginas:
+    for nombre, *_ in paginas:
         c.set_scene_item_enabled(ESCENA, estado["items"][nombre], True)
         time.sleep(SEG_POR_PAGINA)
         c.set_scene_item_enabled(ESCENA, estado["items"][nombre], False)
@@ -129,7 +145,7 @@ def main(modo, parte):
         if modo == "prueba":
             carpeta = pathlib.Path(sys.argv[3]) if len(sys.argv) > 3 else TMP
             captura(c, ESCENA, carpeta / "obs-prueba-pantalla.png")
-            for nombre, _ in cfg["paginas"]:
+            for nombre, *_ in cfg["paginas"]:
                 c.set_scene_item_enabled(ESCENA, estado["items"][nombre], True)
                 time.sleep(5)
                 captura(c, ESCENA, carpeta / f"obs-prueba-{nombre}.png")
